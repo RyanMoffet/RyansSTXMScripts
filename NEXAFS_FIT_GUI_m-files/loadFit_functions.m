@@ -1,0 +1,542 @@
+function F=loadFit_functions()
+%   Loads several function handles into struct F, which then can be
+%   accessed by use of "feval()". E.g.:feval(F.Normalization,var1,var2); 
+%   the number of variables is thereby dependent upon the number of input -
+%   variables needed by the function handle.
+%   
+%   Following function handles can be called through feval:
+%   1.) Normalization
+%   2.) Peakfit
+%   3.) fit_output_table
+%   4.) Fit_Kernel
+%   5.) ProcessParameter
+%   6.) FitSum
+%   7.) getinival
+%   
+%   Help for the function handles:
+%   
+%   "Normalization" takes in a spectrum and a cell called "pre" and gives
+%   out a normalized spectrum. It gets normalized to the maximum O.D. -
+%   value of the spectrum. If "pre" contains actual input
+%   from the user (changing the default value from "-" to a positive real
+%   number), the spectrum is subtracted by the average O.D. - value from
+%   the region of the spectrum, determined by the lower and upper limit
+%   saved in "pre".
+%   
+%   Input arguments:
+%   "spec":
+%   2 - column array consisting of x - (energy) and y - values (Optical
+%   Density).
+%   "pre":
+%   A cell containing the upper and lower limit for the region, whose O.D.
+%   - values are averaged and subtracted from the spectrum. The default
+%   value for both, upper and lower limit, is "-". It has to be changed by
+%   the user.
+%   
+%   Output arguments:
+%   "[output]":
+%   Array that contains the original x - values and the processed y -
+%   values, therefore representing the normalized spectrum.
+%
+%   "Peakfit" uses the m - files "modnlinfit" and "nlparci" to fit the
+%   spectrum and generates error estimates about the quality of the fit.
+%   "modnlinfit" differs from "nlinfit" only in the number of input arguments
+%   for the fit model it accepts. It was so modified, that the data generated
+%   by the GUI (user input) can be used for the nonlinear leat square fit.
+%
+%   Input arguments:
+%   "energy":
+%   Array containing the energy values of the spectrum (x).
+%   "OD":
+%   Array containing O.D. - values of the spectrum (y).
+%   "parameter":
+%   Cell, that is the output of the fit parameter table of the GUI. It
+%   contains the infromation about number of peaks, models, pos etc.
+%   "Carbonstruct":
+%   Struct with the information about whether or not the spectrum was taken
+%   at the Carbon K - edge. It also contains the values for b and m
+%   (constants for fitting the asym. Gaussian Fct.).
+%
+%   Output arguments:
+%   "coefs":
+%   Representing the fitted heights of the peaks and the heights and
+%   exponential decay coefficients when fitting steps.
+%   "ci":
+%   The confidence intervals, belonging to the individual "coefs".
+%   "covb":
+%   The estimated covariance matrix COVB for the fitted coefficients. 
+%   "mse":
+%   The  estimate mean squared error (mse) of the variance of the error
+%   term.
+%
+%   "fit_output_table" generates a cell, which contains the information
+%   about every peak/step, their fitted coefs and corresponding confidence
+%   intervals and the mean squared error of the variance. The cell is
+%   displayed in the "Output for fitting process" - table of the GUI.
+%
+%   Input arguments:
+%   see "Peakfit" arguments for description.
+%   
+%   Output argument:
+%   "fout":
+%   Cell with entries for peaknumber, mathematical model, coefs and their
+%   ci's and mse.
+%
+%   "FIT_Kernel" generates the individual peaks and steps according to the
+%   input "parameter" (cell with content from the fitparameter table of the
+%   GUI). The peaks and steps are then stored in an array.
+%
+%   Input arguments (only "M" is new):
+%   "M":
+%   Coeffiecients that are supposed to be fitted by "modnlinfit".
+%
+%   Output arguments:
+%   "fit":
+%   Array with individual peaks/steps.
+%
+%   "ProcessParameter" generates the necessary variables for "Fit_Kernel".
+%   It also creates the legend string used by the plotting functions of the
+%   GUI.
+%
+%   Input arguments:
+%   see other handle decriptions
+%
+%   Output arguments:
+%   "num":
+%   Number of rows of the parameter cell.
+%   "position":
+%   Array containing the position values of the peaks and steps.
+%   "width":
+%   Array containing the width values of the peaks.
+%   "fitmodel":
+%   Array of strings containing the information which mathematical model to
+%   use.
+%   "LorFrac":
+%   Array containing the values for the Lorentzian Fraction (only important
+%   for Voigt Fct.)
+%   "legendstr":
+%   Array of strings containining the assignments for the peaks/steps
+%   (peaknumber by default).
+%   "b", "m":
+%   Constants b and m for the asym. Gaussian Fct.
+%   "FitSum" is the fit model function handle used by "modnlinfit". It
+%   takes the array consisting of the individual peaks and steps and sums
+%   them up.
+%
+%   Input arguments:
+%   see other handles.
+%
+%   Output arguments:
+%   "fit":
+%   Sum of the individual peaks and steps generated by "Fit_Kernel".
+%
+%   "getinival" generates the initial values according to the mathematical
+%   model used for the peaks and steps. Values are used in the "modnlinfit"
+%   - m - file.
+%
+%   Input arguments:
+%   see other functions.
+%   
+%   Output arguments:
+%   "beta0":
+%   Array containing the initial values for the nonlinear least square fit.
+
+
+F = struct('Normalization',@Normalization,'Peakfit',@Peakfit,'fit_outout_table',@fit_outout_table,...
+    'Fit_Kernel',@Fit_Kernel,'ProcessParameter',@ProcessParameter,'FitSum',@FitSum,'getinival',@getinival);
+
+return
+
+%**************************************************************************
+function [output] = Normalization(spec,pre)
+%   "Normalization" takes in a spectrum and a cell called "pre" and gives
+%   out a normalized spectrum. It gets normalized to the maximum O.D. -
+%   value of the spectrum. If "pre" contains actual input
+%   from the user (changing the default value from "-" to a positive real
+%   number), the spectrum is subtracted by the average O.D. - value from
+%   the region of the spectrum, determined by the lower and upper limit
+%   saved in "pre".
+%   
+%   Input arguments:
+%   "spec":
+%   2 - column array consisting of x - (energy) and y - values (Optical
+%   Density).
+%   "pre":
+%   A cell containing the upper and lower limit for the region, whose O.D.
+%   - values are averaged and subtracted from the spectrum. The default
+%   value for both, upper and lower limit, is "-". It has to be changed by
+%   the user.
+%   
+%   Output arguments:
+%   "[output]":
+%   Array that contains the original x - values and the processed y -
+%   values, therefore representing the normalized spectrum.
+
+% without user input for an upper and lower limit, the spectrum is just
+% normalized
+if strcmp(pre{1,1},'-')
+    normOD = spec(:,2);
+    a=max(normOD);
+    normOD=normOD/a;
+
+    output=[spec(:,1),normOD];
+    
+    % with input, the OD is averaged and the spectrum subtracted by that
+    % value and after that normalized
+else
+    preregion = nanmean(spec(find(spec(:,1) > pre{1,1} & spec(:,1) < pre{2,1}),2));
+
+    normOD = (spec(:,2)-preregion);
+    a=max(normOD);
+    normOD=normOD/a;
+
+    output=[spec(:,1),normOD];
+end
+
+return
+
+%**************************************************************************
+
+function [num,position,width,fitmodel,LorFrac,legendstr,b,m] = ProcessParameter(parameter,carbonstruct)
+%   "ProcessParameter" generates the necessary variables for "Fit_Kernel".
+%   It also creates the legend string used by the plotting functions of the
+%   GUI.
+%
+%   Input arguments:
+%   see other handle decriptions
+%
+%   Output arguments:
+%   "num":
+%   Number of rows of the parameter cell.
+%   "position":
+%   Array containing the position values of the peaks and steps.
+%   "width":
+%   Array containing the width values of the peaks.
+%   "fitmodel":
+%   Array of strings containing the information which mathematical model to
+%   use.
+%   "LorFrac":
+%   Array containing the values for the Lorentzian Fraction (only important
+%   for Voigt Fct.)
+%   "legendstr":
+%   Array of strings containining the assignments for the peaks/steps
+%   (peaknumber by default).
+%   "b", "m":
+%   Constants b and m for the asym. Gaussian Fct.
+
+par = parameter;
+
+sizep = size(par);
+num=sizep(1,1);
+
+% write the values f the fitparameter table into the individual arrays
+for i=1:num
+    fitmodel{i}=par{i,2};
+    position(i)=par{i,3};
+    if isempty(par{i,4})
+        width(i)=1;
+    else width(i)=par{i,4};
+    end
+    if isempty(par{i,5})
+        LorFrac(i)=0.5;
+    else LorFrac(i)=par{i,5};
+    end
+    if strcmp('-',par{i,6})
+        legendstr{i}=['Peak ' num2str(i)];
+    else legendstr{i}=par{i,6};
+    end
+end
+
+cstruct = carbonstruct;
+
+% confirm the new resp. reset the default values for b and m depending upon
+% the toggle state of the carbon k - edge checkbox
+if cstruct.cbox == 1
+    b=-164.75;
+    m=0.575;
+else m=cstruct.newconsts{1,1};
+    b=cstruct.newconsts{2,1};
+end
+
+return
+
+%**************************************************************************
+function fit = Fit_Kernel(M,energy,parameter,carbonstruct)
+%   "FIT_Kernel" generates the individual peaks and steps according to the
+%   input "parameter" (cell with content from the fitparameter table of the
+%   GUI). The peaks and steps are then stored in an array.
+%
+%   Input arguments (only "M" is new):
+%   "M":
+%   Coeffiecients that are supposed to be fitted by "modnlinfit".
+%
+%   Output arguments:
+%   "fit":
+%   Array with individual peaks/steps.
+
+% get the function handles for the mathematical models
+F3=loadFit_Models();
+
+% get the arrays with the user input
+[num,position,width,fitmodel,LorFrac,legendstr,b,m]=ProcessParameter(parameter,carbonstruct);
+
+% initialize y
+y = zeros(num,length(energy));
+
+% depending upon fitmodel y(i) is loaded with the corresponding
+% mathematical model
+j=1;
+for i=1:num
+    switch fitmodel{i}
+        case 'Gaussian Fct.'
+            y(i,:) = [feval(F3.Gaussian_Fct,M(j),energy,position(i),width(i))]';
+            j=j+1;
+        case 'Lorentzian Fct.'
+            y(i,:) = [feval(F3.Lorentzian_Fct,M(j),energy,position(i),width(i))]';
+            j=j+1;
+        case 'Voigt Fct.'
+            y(i,:) = [feval(F3.Voigt_Fct,M(j),LorFrac(i),energy,position(i),width(i))]';
+            j=j+1;
+        case 'Asym. Gaussian Fct.'
+            y(i,:) = [feval(F3.Asym_Gaussian_Fct,M(j),energy,position(i),b,m)]';
+            j=j+1;
+        case 'Gaussian Shaped Step'
+            y(i,:) = feval(F3.Gaussian_Shaped_Step,M(j),M(j+1),energy,position(i),width(i));
+            j=j+2;
+        case 'Lorentzian Shaped Step'
+            y(i,:) = feval(F3.Lorentzian_Shaped_Step,M(j),M(j+1),energy,position(i),width(i));
+            j=j+2;
+    end
+end
+
+% call y fit and check for unphysical values
+fit = y;
+fit(isnan(fit) | isinf(fit))=0;
+
+return
+
+%**************************************************************************
+function beta0 = getinival(parameter,carbonstruct)
+%   "getinival" generates the initial values according to the mathematical
+%   model used for the peaks and steps. Values are used in the "modnlinfit"
+%   - m - file.
+%
+%   Input arguments:
+%   see other functions.
+%   
+%   Output arguments:
+%   "beta0":
+%   Array containing the initial values for the nonlinear least square fit.
+
+% get the arrays with the user input
+[num,position,width,fitmodel,LorFrac,legendstr,b,m]=ProcessParameter(parameter,carbonstruct);
+
+% initialize beta0
+beta0=[];
+j=1;
+
+% generate initial values for the different mathematical models
+for i=1:num
+    switch fitmodel{i}
+        case 'Gaussian Fct.'
+            beta0(j)=0.1;
+            j=j+1;
+        case 'Lorentzian Fct.'
+            beta0(j)=0.1;
+            j=j+1;
+        case 'Voigt Fct.'
+            beta0(j)=0.1;
+            j=j+1;
+        case 'Asym. Gaussian Fct.'
+            beta0(j)=0.1;
+            j=j+1;
+        case 'Gaussian Shaped Step'
+            beta0(j)=0.1;
+            beta0(j+1)=0.01;
+            j=j+2;
+        case 'Lorentzian Shaped Step'
+            beta0(j)=0.1;
+            beta0(j+1)=0.01;
+            j=j+2;
+    end
+end
+
+
+return
+%**************************************************************************
+function fout = fit_outout_table(parameter,carbonstruct,coefs,ci,mse)
+%   "fit_output_table" generates a cell, which contains the information
+%   about every peak/step, their fitted coefs and corresponding confidence
+%   intervals and the mean squared error of the variance. The cell is
+%   displayed in the "Output for fitting process" - table of the GUI.
+%
+%   Input arguments:
+%   see "Peakfit" arguments for description.
+%   
+%   Output argument:
+%   "fout":
+%   Cell with entries for peaknumber, mathematical model, coefs and their
+%   ci's and mse.
+
+% get the arrays with the user input
+[num,position,width,fitmodel,LorFrac,legendstr,b,m]=ProcessParameter(parameter,carbonstruct);
+
+
+% create the cell with the statistical output
+j=1;
+k=1;
+for i=1:num
+    switch fitmodel{i}
+        case 'Gaussian Fct.'
+            fout{k,1}=fitmodel{i};
+            fout{k,2}=['Peak ' num2str(i)];
+            fout{k+1,1}='Height';
+            fout{k+1,2}=coefs(j);
+            fout{k+2,1}='Confidence Interval';
+            fout{k+3,1}=ci(j,1);
+            fout{k+3,2}=ci(j,2);
+            j=j+1;
+            k=k+4;
+        case 'Lorentzian Fct.'
+            fout{k,1}=fitmodel{i};
+            fout{k,2}=['Peak ' num2str(i)];
+            fout{k+1,1}='Height';
+            fout{k+1,2}=coefs(j);
+            fout{k+2,1}='Confidence Interval';
+            fout{k+3,1}=ci(j,1);
+            fout{k+3,2}=ci(j,2);
+            j=j+1;
+            k=k+4;
+        case 'Voigt Fct.'
+            fout{k,1}=fitmodel{i};
+            fout{k,2}=['Peak ' num2str(i)];
+            fout{k+1,1}='Height';
+            fout{k+1,2}=coefs(j);
+            fout{k+2,1}='Confidence Interval';
+            fout{k+3,1}=ci(j,1);
+            fout{k+3,2}=ci(j,2);
+            j=j+1;
+            k=k+4;
+        case 'Asym. Gaussian Fct.'
+            fout{k,1}=fitmodel{i};
+            fout{k,2}=['Peak ' num2str(i)];
+            fout{k+1,1}='Height';
+            fout{k+1,2}=coefs(j);
+            fout{k+2,1}='Confidence Interval';
+            fout{k+3,1}=ci(j,1);
+            fout{k+3,2}=ci(j,2);
+            j=j+1;
+            k=k+4;;
+        case 'Gaussian Shaped Step'
+            fout{k,1}=fitmodel{i};
+            fout{k,2}=['Peak ' num2str(i)];
+            fout{k+1,1}='Height';
+            fout{k+1,2}=coefs(j);
+            fout{k+2,1}='Confidence Interval';
+            fout{k+3,1}=ci(j,1);
+            fout{k+3,2}=ci(j,2);
+            fout{k+4,1}='Exp. Decay d';
+            fout{k+4,2}=coefs(j+1);
+            fout{k+5,1}='Confidence Interval';
+            fout{k+6,1}=ci(j+1,1);
+            fout{k+6,2}=ci(j+1,2);
+            j=j+2;
+            k=k+7;
+        case 'Lorentzian Shaped Step'
+            fout{k,1}=fitmodel{i};
+            fout{k,2}=['Peak ' num2str(i)];
+            fout{k+1,1}='Height';
+            fout{k+1,2}=coefs(j);
+            fout{k+2,1}='Confidence Interval';
+            fout{k+3,1}=ci(j,1);
+            fout{k+3,2}=ci(j,2);
+            fout{k+4,1}='Exp. Decay d';
+            fout{k+4,2}=coefs(j+1);
+            fout{k+5,1}='Confidence Interval';
+            fout{k+6,1}=ci(j+1,1);
+            fout{k+6,2}=ci(j+1,2);
+            j=j+2;
+            k=k+7;
+    end
+end
+
+fout{k,1}='Mean Squared Error';
+fout{k,2}=mse;
+
+return
+
+%**************************************************************************
+function fit = FitSum(M,energy,parameter,carbonstruct)
+%   "FitSum" is the fit model function handle used by "modnlinfit". It
+%   takes the array consisting of the individual peaks and steps and sums
+%   them up.
+%
+%   Input arguments:
+%   see other handles.
+%
+%   Output arguments:
+%   "fit":
+%   Sum of the individual peaks and steps generated by "Fit_Kernel".
+
+y = Fit_Kernel(M,energy,parameter,carbonstruct);
+
+sizep=size(parameter);
+
+% if else structure because sum will sum up all elements of an array, if
+% its only a vector, resulting in a scalar value
+if sizep(1,1)>1
+fit = sum(y)';
+else fit=y';
+end
+
+return
+
+%**************************************************************************
+function [coefs,ci,covb,mse] = Peakfit(energy,OD,parameter,carbonstruct)
+%   "Peakfit" uses the m - files "modnlinfit" and "nlparci" to fit the
+%   spectrum and generates error estimates about the quality of the fit.
+%   "modnlinfit" differs from "nlinfit" only in the number of input arguments
+%   for the fit model it accepts. It was so modified, that the data generated
+%   by the GUI (user input) can be used for the nonlinear leat square fit.
+%
+%   Input arguments:
+%   "energy":
+%   Array containing the energy values of the spectrum (x).
+%   "OD":
+%   Array containing O.D. - values of the spectrum (y).
+%   "parameter":
+%   Cell, that is the output of the fit parameter table of the GUI. It
+%   contains the infromation about number of peaks, models, pos etc.
+%   "Carbonstruct":
+%   Struct with the information about whether or not the spectrum was taken
+%   at the Carbon K - edge. It also contains the values for b and m
+%   (constants for fitting the asym. Gaussian Fct.).
+%
+%   Output arguments:
+%   "coefs":
+%   Representing the fitted heights of the peaks and the heights and
+%   exponential decay coefficients when fitting steps.
+%   "ci":
+%   The confidence intervals, belonging to the individual "coefs".
+%   "covb":
+%   The estimated covariance matrix COVB for the fitted coefficients. 
+%   "mse":
+%   The  estimate mean squared error (mse) of the variance of the error
+%   term.
+
+% get initial values for modlinfit
+beta0 = getinival(parameter,carbonstruct);
+
+% creates some extra x - values for energy and O.D. (by interpolation) to
+% improve the fit result (? Question: If it really improves it a lot ?)
+x = linspace(energy(1),energy(end),500)';
+y = interp1(energy,OD,x);
+
+% set the options for modnlinfit
+options = statset('MaxIter',400,'TolFun',1e-8,'TolX',1e-8);
+
+% generate fit and statistical output
+[coefs,res,J2,covb,mse] = modnlinfit(x,y,@FitSum,beta0,options,parameter,carbonstruct);
+ci=nlparci(coefs,res,'jacobian',J2);
+
+return

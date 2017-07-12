@@ -1,0 +1,1 @@
+function g = AsyGaussian(x,pos)%  gaussian(x,pos,wid) = gaussian peak centered on pos, half-width=wid%  x may be scalar, vector, or matrix, pos and wid both scalar%  T. C. O'Haver, 1988% Example: gaussian([1 2 3],1,2) gives result [0.5000    1.0000    0.5000]gam = x.*0.575 - 164;g = exp(-0.5.*((x-pos)./(gam/2.355)).^2);

@@ -1,0 +1,359 @@
+function varargout = STACKLab(varargin)
+% function STACKLAB(S) explores the stack standard struct S 
+%
+%
+% STACKLAB M-file for STACKLab.fig
+
+% Begin initialization code - DO NOT EDIT
+gui_Singleton = 1;
+gui_State = struct('gui_Name',       mfilename, ...
+                   'gui_Singleton',  gui_Singleton, ...
+                   'gui_OpeningFcn', @STACKLab_OpeningFcn, ...
+                   'gui_OutputFcn',  @STACKLab_OutputFcn, ...
+                   'gui_LayoutFcn',  [] , ...
+                   'gui_Callback',   []);
+if nargin && ischar(varargin{1})
+    gui_State.gui_Callback = str2func(varargin{1});
+end
+
+if nargout
+    [varargout{1:nargout}] = gui_mainfcn(gui_State, varargin{:});
+else
+    gui_mainfcn(gui_State, varargin{:});
+end
+% End initialization code - DO NOT EDIT
+
+
+% --- Executes just before STACKLab is made visible.
+function STACKLab_OpeningFcn(hObject, eventdata, handles, varargin)
+
+% Define color table
+handles.colorTable={'b','r','k','g','m','c'};
+
+% Read input arguments
+handles.S=varargin{1};
+
+% Read usefull information about the stack
+handles.eVlength=size(handles.S.spectr,3);
+eVinit=floor(handles.eVlength/10);
+handles.eVmin=min(handles.S.eVenergy);
+handles.eVmax=max(handles.S.eVenergy);
+
+% Set eVSlider value to middle of stack, set Max and Min
+set(handles.eVSlider,'Min',1);
+set(handles.eVSlider,'Max',handles.eVlength);
+set(handles.eVSlider,'Value',eVinit);
+handles.sliderValue = eVinit;
+
+% initialize StackViewer and SpecViewer
+handles=initViewers(handles,eVinit,0);
+
+% Choose default command line output for STACKLab
+handles.output = hObject;
+
+% Update handles structure
+guidata(hObject, handles);
+
+% UIWAIT makes STACKLab wait for user response (see UIRESUME)
+% uiwait(handles.figure1);
+
+
+% --- Outputs from this function are returned to the command line.
+function varargout = STACKLab_OutputFcn(hObject, eventdata, handles) 
+
+% Get default command line output from handles structure
+varargout{1} = handles.output;
+
+
+% --- Executes on slider movement.
+function eVSlider_Callback(hObject, eventdata, handles) 
+
+handles.sliderValue = ceil(get(handles.eVSlider,'Value')); % read slider Value
+
+% update StackViewer
+axes(handles.StackViewer);
+imagesc(handles.S.spectr(:,:,handles.sliderValue))
+colormap(gray)
+title(sprintf('E=%6.2f eV',handles.S.eVenergy(handles.sliderValue)),'FontSize',18,'FontWeight','bold')
+axis image
+colorbar
+
+drawSpecViewer(hObject,handles,handles.sliderValue);
+
+% Update handles structure
+guidata(hObject, handles);
+
+
+% --- Executes during object creation, after setting all properties.
+function eVSlider_CreateFcn(hObject, eventdata, handles)
+
+if isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor',[.9 .9 .9]);
+end
+
+% Update handles structure
+guidata(hObject, handles);
+
+
+
+% --- Executes on button press in buttonNewROI.
+function buttonNewROI_Callback(hObject, eventdata, handles)
+
+axes(handles.StackViewer)
+try 
+    colorcounter=length(handles.specArray)+1;
+catch
+    colorcounter=1;
+end
+
+% Draw ROI, create binary ROI Mask
+h=imfreehand;
+
+if mod(colorcounter,6)~=0 % mod(colorcounter,6) is used to loop over the 6 colortable elements
+    colorindex=mod(colorcounter,6);
+else
+    colorindex=1;
+end
+setColor(h,handles.colorTable{colorindex});  
+Mask=createMask(h);
+
+% Calculate average spectrum 
+return_spec=averagespec(handles.S,Mask,handles.eVlength);
+handles.specArray{length(handles.specArray)+1}=return_spec;
+drawSpecViewer(hObject,handles,handles.sliderValue)
+
+% Update handles structure
+guidata(hObject, handles);
+
+
+% --- Executes on button press in buttonReset.
+function buttonReset_Callback(hObject, eventdata, handles)
+
+clear handles.energyA handles.energyB
+handles.sliderValue = ceil(get(handles.eVSlider,'Value')); % read slider Value
+handles=initViewers(handles, handles.sliderValue,1);
+set(handles.textEnergyB,'String',sprintf('Energy B ='))
+set(handles.textEnergyA,'String',sprintf('Energy A ='))
+
+% Update handles structure
+guidata(hObject, handles);
+
+% --- Executes on button press in buttonEnergyB.
+function buttonEnergyB_Callback(hObject, eventdata, handles)
+
+handles.energyB= ceil(get(handles.eVSlider,'Value')); % read slider Value
+set(handles.textEnergyB,'String',sprintf('Energy B = %6.2f eV',handles.S.eVenergy(handles.energyB)))
+
+% Update handles structure
+guidata(hObject, handles);
+
+
+
+% --- Executes on button press in buttonEnergyA.
+function buttonEnergyA_Callback(hObject, eventdata, handles)
+
+handles.energyA= ceil(get(handles.eVSlider,'Value')); % read slider Value
+set(handles.textEnergyA,'String',sprintf('Energy A= %6.2f eV',handles.S.eVenergy(handles.energyA)))
+
+% Update handles structure
+guidata(hObject, handles);
+
+
+
+% --- Executes on button press in buttonSubtract.
+function buttonSubtract_Callback(hObject, eventdata, handles)
+
+%uses TRY to prevent crash if energyA or energyB are not defined
+try
+    
+    bufferA=handles.S.spectr(:,:,handles.energyA);
+    bufferB=handles.S.spectr(:,:,handles.energyB);
+    
+    axes(handles.StackViewer)
+    imagesc(bufferA-bufferB)
+    colormap(gray)
+    title(sprintf('Energy A - Energy B'),'FontSize',18,'FontWeight','bold')
+    axis image
+    colorbar
+    
+end
+% Update handles structure
+guidata(hObject, handles);
+
+
+
+
+% --- Function calculates binary mask for inital SpecViewer
+function returnMask=initMask(V)
+
+imagebuffer=mean(V,3); % Mean of total Stack is used to Produce initial mask
+imagebuffer(imagebuffer<0)=0; % Filter negative values
+imagebuffer=medfilt2(imagebuffer);
+GrayImage=mat2gray(imagebuffer); % Turn into a greyscale with vals [0 1]
+Thresh=graythresh(GrayImage); % Otsu thresholding
+tempMask=im2bw(GrayImage,Thresh); % Give binary image
+
+labelMat=bwlabel(tempMask); %% Label connected regions in binary image
+
+returnMask=zeros(size(tempMask)); % Mask used to note valid Fe rich areas who's pixels will be used in histogram
+numofparticles=max(max(labelMat));
+totnumofpixels=size(returnMask,1)*size(returnMask,2);
+
+% Filtering of connected regions that are smaller than 0.5% of total image Area  
+for cnt=1:numofparticles
+            
+        [ytrue,xtrue]=find(labelMat==cnt);
+        linearind=sub2ind(size(returnMask),ytrue,xtrue);
+        
+        if length(linearind)>=0.005* totnumofpixels   %Areas bigger or equal to 1% of total image size are used for histogram 
+            
+            returnMask(linearind)=1;
+            
+        end
+        
+end
+
+return
+
+
+
+% --- Function to return average spectrum over region defined by binary Mask
+function return_spec=averagespec(S,Mask,eVlength)
+
+V=S.spectr;
+return_spec=zeros(eVlength,2);
+return_spec(:,1)=S.eVenergy;
+
+% loop over energy range of stack, calculate average vor each energy -> return_spec
+for cnt=1:eVlength
+    
+    buffer=V(:,:,cnt);
+    return_spec(cnt,2)=mean(mean(buffer(Mask~=0)));
+    clear buffer
+   
+end
+
+return
+
+
+
+% --- Function used to calculate plot limits for SpecViewer
+function [SpecViewerMin,SpecViewerMax]=SpecViewerLimits(inputArray)
+
+% init return values
+SpecViewerMin=99;
+SpecViewerMax=0;
+
+for cnt=1:length(inputArray)
+    
+    if min(inputArray{cnt}(:,2)) < SpecViewerMin
+        
+        SpecViewerMin=min(inputArray{cnt}(:,2));
+        
+    end
+    
+    if max(inputArray{cnt}(:,2)) > SpecViewerMax
+        
+        SpecViewerMax=max(inputArray{cnt}(:,2));
+        
+    end
+    
+end
+
+SpecViewerMax=1.05*SpecViewerMax;
+SpecViewerMin=SpecViewerMin-0.05*SpecViewerMax;
+return
+
+
+
+% --- Function used to initialize StackViewer and SpecViewer after program start / reset
+% RESET = 0 / 1, for RESET = 1: specArray is cleared, no average stack spec is displayed  
+function handles=initViewers(handles,energyposition,RESET)
+
+% Display initial Stack view
+axes(handles.StackViewer)
+imagesc(handles.S.spectr(:,:,energyposition))
+colormap(gray)
+title(sprintf('E=%6.2f eV',handles.S.eVenergy(energyposition)),'FontSize',18,'FontWeight','bold')
+axis image
+colorbar
+
+% Calculate initial Mask for average stack spectrum
+Mask=initMask(handles.S.spectr);
+
+% Get initial spectrum of stack for initial SpecViewer
+spec=averagespec(handles.S,Mask,handles.eVlength);
+handles.specArray{1}=spec;
+
+% Get SpecViewer plot limits
+[SpecViewerMin,SpecViewerMax]=SpecViewerLimits(handles.specArray);
+
+% Show initial SpecViewer
+axes(handles.SpecViewer)
+
+if RESET==1
+    clear handles.specArray
+end
+
+if RESET~=1
+    plot(spec(:,1),spec(:,2));
+    hold on
+end
+
+
+stem(spec(energyposition,1),spec(energyposition,2)+5,'r')
+xlim([handles.eVmin,handles.eVmax])
+ylim([SpecViewerMin,SpecViewerMax])
+hold off
+
+return
+
+
+
+% --- Function used to draw updated SpecViewer
+function drawSpecViewer(hObject,handles,energyposition)
+
+axes(handles.SpecViewer)
+
+%try has to be used to test if specArray exists
+try
+    % Get SpecViewer plot limits
+    [SpecViewerMin,SpecViewerMax]=SpecViewerLimits(handles.specArray);
+    
+    % update SpecViewer by looping ofer all specArray elements (if specArray exists)
+    for cnt=1:length(handles.specArray)
+        
+        if mod(cnt,6)~=0 % mod(colorcounter,6) is used to loop over the 6 colortable elements
+            colorindex=mod(cnt,6);
+        else
+            colorindex=1;
+        end
+        
+        plot(handles.specArray{cnt}(:,1),handles.specArray{cnt}(:,2),handles.colorTable{colorindex}) 
+        hold on
+        
+    end
+    
+    stem(handles.specArray{1}(energyposition,1),handles.specArray{1}(energyposition,2)+5,'r')
+    xlim([handles.eVmin,handles.eVmax])
+    ylim([SpecViewerMin,SpecViewerMax])
+    hold off
+    
+catch 
+    
+    % Calculate initial Mask for average stack spectrum
+    Mask=initMask(handles.S.spectr);
+    
+    % Get initial spectrum of stack for initial SpecViewer
+    spec=averagespec(handles.S,Mask,handles.eVlength);
+    handles.specArray{1}=spec;  %handles.specArray is created temporarily for calculation of the plot limits etc.
+    [SpecViewerMin,SpecViewerMax]=SpecViewerLimits(handles.specArray);
+    stem(handles.specArray{1}(energyposition,1),handles.specArray{1}(energyposition,2)+5,'r')
+    xlim([handles.eVmin,handles.eVmax])
+    ylim([SpecViewerMin,SpecViewerMax])
+    hold off
+    clear handles.specArray
+    
+end
+
+return
