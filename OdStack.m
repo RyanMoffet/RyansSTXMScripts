@@ -1,5 +1,5 @@
 
-function S=OdStack(structin,method,plotflag)
+function S=OdStack(structin,method,plotflag,manualiocheck)
 %function S=OdStack(structin,method)
 %
 %Automated STXM raw data to optical density (OD) conversion.
@@ -17,10 +17,21 @@ function S=OdStack(structin,method,plotflag)
 %method         string defining the thresholding method:    -'O' thresholding using Otsu's method
 %                                                           -'C' thresholding using a constant value
 %                                                                (98.5% of maximal intensity)
+%															
+%plotflag		1 or 0 which controls the plotting of figures
+%manualiocheck	string deciding whether to manually select Io region
 %
 %Outputs
 %-------
 %S              structure array containing the OD converted STXM data
+
+%Making third input (plotflag) optional, defaulting to no figure
+if nargin < 3
+	plotflag = 0;
+	manualiocheck = 'no';
+elseif nargin < 4
+	manualiocheck = 'no';
+end
 
 
 % create temporary variables
@@ -78,10 +89,10 @@ end
  S.mask=Mask;
 % Izero extraction
 
-%If you get annoyed with this prompt, uncomment the next line and comment
-%the line with "inputdlg" line
-
-manualiocheck = 'no';
+%%%%% this section replaced with an optional input
+%If you get annoyed with this prompt, uncomment the manualiocheck line and comment
+%the line with "inputdlg" line. 
+% manualiocheck = 'no';
 % manualiocheck = inputdlg('Do you want to manually define an Io region? (Cancel continues with automatic method)','Manual Io Check',1,{'yes'});
 
 if strcmp(manualiocheck,'yes') == 1
