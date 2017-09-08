@@ -1,5 +1,5 @@
 
-function S=OdStack(structin,method,plotflag)
+function S=OdStack(structin,method,plotflag,manualiocheck)
 %function S=OdStack(structin,method)
 %
 %Automated STXM raw data to optical density (OD) conversion.
@@ -8,6 +8,8 @@ function S=OdStack(structin,method,plotflag)
 %by averaging the intensity data over the particle-free zones.
 %R.C. Moffet, T.R. Henn February 2009
 %
+%Manual Io selection option added by Matthew Fraund (2016)
+%
 %Inputs
 %------
 %structin       aligned raw data stack structure array (typically the output of the
@@ -15,10 +17,21 @@ function S=OdStack(structin,method,plotflag)
 %method         string defining the thresholding method:    -'O' thresholding using Otsu's method
 %                                                           -'C' thresholding using a constant value
 %                                                                (98.5% of maximal intensity)
+%															
+%plotflag		1 or 0 which controls the plotting of figures
+%manualiocheck	string deciding whether to manually select Io region
 %
 %Outputs
 %-------
 %S              structure array containing the OD converted STXM data
+
+%Making third input (plotflag) optional, defaulting to no figure
+if nargin < 3
+	plotflag = 0;
+	manualiocheck = 'no';
+elseif nargin < 4
+	manualiocheck = 'no';
+end
 
 
 % create temporary variables
@@ -73,29 +86,86 @@ else
     return
     
 end
-% S.mask=Mask;
+ S.mask=Mask;
 % Izero extraction
-Izero=zeros(eVlength,2);
-Izero(:,1)=S.eVenergy;
 
-% loop over energy range of stack, calculate average vor each energy -> return_spec
-for cnt=1:eVlength
+%%%%% this section replaced with an optional input
+%If you get annoyed with this prompt, uncomment the manualiocheck line and comment
+%the line with "inputdlg" line. 
+% manualiocheck = 'no';
+% manualiocheck = inputdlg('Do you want to manually define an Io region? (Cancel continues with automatic method)','Manual Io Check',1,{'yes'});
+
+if strcmp(manualiocheck,'yes') == 1
+    avgstackfig = figure('Name','Define an Io region','NumberTitle','off');
+    imagesc(imagebuffer);
+    colormap gray;
     
-    buffer=stack(:,:,cnt);
-    Izero(cnt,2)=mean(mean(buffer(Mask==1)));
-    clear buffer
+    manualrect = getrect(avgstackfig);
+    close(avgstackfig);
     
+    cliprowstart = round(manualrect(2));
+    cliprowend = round(cliprowstart + manualrect(4));
+    clipcolstart = round(manualrect(1));
+    clipcolend = round(clipcolstart + manualrect(3));
+    manualIomatrix = imagebuffer((cliprowstart):(cliprowend),(clipcolstart):(clipcolend));
+    
+    Izero = zeros(eVlength,2);
+    stdIzero = zeros(eVlength,2);
+    errIzero = zeros(eVlength,2);
+    
+    Izero(:,1)=S.eVenergy;
+    stdIzero(:,1) = S.eVenergy;
+    errIzero(:,1) = S.eVenergy;
+    
+    for cnt=1:eVlength
+        
+        buffer=stack((cliprowstart):(cliprowend),(clipcolstart):(clipcolend),cnt); %This selects the region selected previously for energy "cnt"
+        Izero(cnt,2)=mean(mean(buffer));
+        stdIzero(cnt,2) = std(std(buffer));
+        numIzero = numel(buffer);
+        errIzero(cnt,2) = 1.96 .* stdIzero(cnt,2) ./ sqrt(numIzero); %1.96 comes from t-distribution with an alpha level of 0.05
+        clear buffer
+        
+    end
+
+    
+else
+    
+    Izero=zeros(eVlength,2);
+    stdIzero = zeros(eVlength,2);
+    errIzero = zeros(eVlength,2);
+    
+    Izero(:,1)=S.eVenergy;
+    stdIzero(:,1) = S.eVenergy;
+    errIzero(:,1) = S.eVenergy;
+    
+    % loop over energy range of stack, calculate average vor each energy -> return_spec
+    for cnt=1:eVlength
+        
+        buffer=stack(:,:,cnt);
+        Izero(cnt,2)=mean(buffer(Mask==1));
+        stdIzero(cnt,2) = std(buffer(Mask==1));
+        numIzero = sum(sum(Mask));
+        errIzero(cnt,2) = 1.96 .* stdIzero(cnt,2) ./ sqrt(numIzero); %1.96 comes from t-distribution with an alpha level of 0.05
+        clear buffer
+        
+    end
 end
 
 S.Izero=Izero;
-
+S.stdIzero = stdIzero;
+S.errIzero = errIzero;
 % stack conversion Intensity --> Optical Density
+
+S.errOD = zeros(size(S.spectr));
 
 for k=1:eVlength
     
-    S.spectr(:,:,k)=-log(stack(:,:,k)/Izero(k,2));
-    
+    S.spectr(:,:,k)= -log(stack(:,:,k)/Izero(k,2)); 
+    S.errOD(:,:,k) = (errIzero(k,2)) .* sqrt((1./stack(:,:,k).^2) + (1./Izero(k,2).^2));
 end
+
+% S.position = structin.position;
 
 %Plot results
 if plotflag==1
@@ -106,8 +176,8 @@ if plotflag==1
     colorbar
     title('Raw Intensity Stack Mean')
     colormap gray
-    xlabel('X-Position (µm)','FontSize',11,'FontWeight','normal')
-    ylabel('Y-Position (µm)','FontSize',11,'FontWeight','normal')
+    xlabel('X-Position (Âµm)','FontSize',11,'FontWeight','normal')
+    ylabel('Y-Position (Âµm)','FontSize',11,'FontWeight','normal')
     
     subplot(2,2,2)
     imagesc(xAxislabel,yAxislabel,mean(S.spectr,3));
@@ -115,8 +185,8 @@ if plotflag==1
     colorbar
     colormap gray
     title('Optical Density Stack Mean')
-    xlabel('X-Position (µm)','FontSize',11,'FontWeight','normal')
-    ylabel('Y-Position (µm)','FontSize',11,'FontWeight','normal')
+    xlabel('X-Position (Âµm)','FontSize',11,'FontWeight','normal')
+    ylabel('Y-Position (Âµm)','FontSize',11,'FontWeight','normal')
     
     
     subplot(2,2,3)
@@ -124,8 +194,8 @@ if plotflag==1
     colorbar
     axis image
     title('Izero Region Mask')
-    xlabel('X-Position (µm)','FontSize',11,'FontWeight','normal')
-    ylabel('Y-Position (µm)','FontSize',11,'FontWeight','normal')
+    xlabel('X-Position (Âµm)','FontSize',11,'FontWeight','normal')
+    ylabel('Y-Position (Âµm)','FontSize',11,'FontWeight','normal')
     
     subplot(2,2,4)
     plot(Izero(:,1),Izero(:,2))
